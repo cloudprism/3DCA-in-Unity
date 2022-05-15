@@ -1,0 +1,188 @@
+////////////////////////////////////////////////////////////////
+
+// Kernels
+#pragma kernel Clear
+#pragma kernel Randomize
+#pragma kernel Gradient
+#pragma kernel Modify
+#pragma kernel Step
+
+// Constants
+#define PI 3.14159265
+
+// General
+float Time;
+float Interpolation;
+
+// Buffers
+RWTexture3D<float4> Input;
+SamplerState samplerInput;
+RWTexture3D<float4> Output;
+float Width, Height, Depth;
+
+// Neighborhoods
+int NeighborhoodA_Radius;
+int NeighborhoodB_Radius;
+int NeighborhoodC_Radius;
+
+// Rules
+float Rule1Parameter1;
+float Rule1Parameter2;
+float Rule2Parameter1;
+float Rule2Parameter2;
+float Rule3Parameter1;
+float Rule3Parameter2;
+float Rule4Parameter1;
+float Rule4Parameter2;
+float Rule5Parameter1;
+float Rule5Parameter2;
+float Rule6Parameter1;
+float Rule6Parameter2;
+
+// Modification
+float BrushRadius;
+float BrushValue;
+float3 BrushLocation;
+
+////////////////////////////////////////////////////////////////
+
+inline float GenerateRandomNumber(float3 xyz)
+{
+    // TODO: improve randomization quality
+    return frac(sin(dot(xyz, float3(72.9898, 78.233, 70))) * Time);
+}
+
+inline float WrapAround(float x, float y)
+{
+    if (x < 0)
+    {
+        return y - abs(x) % y;
+    }
+    else
+    {
+        return x % y;
+    }
+}
+
+float Growth(float value)
+{
+    return (-cos((value)*PI * 2));
+}
+
+////////////////////////////////////////////////////////////////
+
+[numthreads(16, 8, 8)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    Input[id.xyz] = 0;
+}
+
+[numthreads(16, 8, 8)]
+void Randomize(uint3 id : SV_DispatchThreadID)
+{
+    Input[id.xyz] = GenerateRandomNumber(id.xyz);
+}
+
+[numthreads(16, 8, 8)]
+void Gradient(uint3 id : SV_DispatchThreadID)
+{
+    Input[id.xyz] = (id.x / Width + id.y / Height + id.z / Depth) / 3;
+}
+
+[numthreads(16, 8, 8)]
+void Modify(uint3 id : SV_DispatchThreadID)
+{
+    if (distance(id.xyz, (BrushLocation + float3(0.5, 0.5, 0.5)) * Width) < Width * BrushRadius)
+    {
+        Input[id.xyz] = BrushValue;
+    }
+}
+
+[numthreads(16, 8, 8)]
+void Step(uint3 id : SV_DispatchThreadID)
+{
+    float a = 11;
+    float b = 10;
+    float c = 9;
+
+    float4 value = float4(0, 0, 0, 0);
+    int count = 0;
+    for (int u = -a; u <= a; u++)
+    {
+        for (int v = -a; v <= a; v++)
+        {
+            for (int w = -a; w <= a; w++)
+            {
+                int3 xyz = id.xyz + int3(u, v, w);
+                {
+                    xyz.x = WrapAround(xyz.x, Width);
+                    xyz.y = WrapAround(xyz.y, Width);
+                    xyz.z = WrapAround(xyz.z, Width);
+                }
+                float dist = sqrt(u * u + v * v + w * w);
+                if (dist <= a && !(u == 0 && v == 0 && w == 0))
+                {
+                    count++;
+                    value += Input[xyz];
+                }
+            }
+        }
+    }
+    value /= count;
+
+    float4 value2 = float4(0, 0, 0, 0);
+    int count2 = 0;
+    for (int u = -b; u <= b; u++)
+    {
+        for (int v = -b; v <= b; v++)
+        {
+            for (int w = -b; w <= b; w++)
+            {
+                int3 xyz = id.xyz + int3(u, v, w);
+                {
+                    xyz.x = WrapAround(xyz.x, Width);
+                    xyz.y = WrapAround(xyz.y, Width);
+                    xyz.z = WrapAround(xyz.z, Width);
+                }
+                if (sqrt(u * u + v * v + w * w) <= b && !(u == 0 && v == 0 && w == 0))
+                {
+                    count2++;
+                    value2 += Input[xyz];
+                }
+            }
+        }
+    }
+    value2 /= count2;
+
+    float4 value3 = float4(0, 0, 0, 0);
+    int count3 = 0;
+    for (int u = -c; u <= c; u++)
+    {
+        for (int v = -c; v <= c; v++)
+        {
+            for (int w = -c; w <= c; w++)
+            {
+                int3 xyz = id.xyz + int3(u, v, w);
+                {
+                    xyz.x = WrapAround(xyz.x, Width);
+                    xyz.y = WrapAround(xyz.y, Width);
+                    xyz.z = WrapAround(xyz.z, Width);
+                }
+                if (sqrt(u * u + v * v + w * w) <= c && !(u == 0 && v == 0 && w == 0))
+                {
+                    count3++;
+                    value3 += Input[xyz];
+                }
+            }
+        }
+    }
+    value3 /= count3;
+
+    float output = Input[id.xyz].r;
+
+    output = output + Growth(value + value2 + value3) * Interpolation;
+
+    Output[id.xyz] = float4(output, output, output, output);
+}
+
+////////////////////////////////////////////////////////////////
